@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <title>Configuração do WiFi</title>
+    <meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+
+  <body onload="scriptBegin()">
+    <section id="waitScanning">Aguarde, escaneando redes...</section>
+    <section id="scanningResult" hidden="true">
+      <fieldset>
+        <legend>WiFi</legend>
+        <form id="ssidSelect">
+          <legend>Wifi (SSID)</legend>
+          <label for="custom_radio_input"> </label>
+          <input type="radio" id="custom_radio_input" name="ssid" value="" checked="true" />
+          <input
+            id="custom_ssid_input"
+            type="search"
+            onfocus="custom_radio_input.checked = true"
+            placeholder="Nome da rede"
+            onchange="custom_radio_input.value = value"
+          />
+          <input
+            type="button"
+            value="Limpar"
+            onclick="custom_ssid_input.value = ''"
+            onfocus="custom_ssid_input.focus()"
+          />
+          <legend>Senha</legend>
+          <label for="password"> </label>
+          <input type="password" id="password" name="pwd" placeholder="Senha" />
+          <input type="button" value="Limpar" onclick="password.value = ''" onfocus="password.focus()" />
+          <input type="checkbox" id="viewPwd" onclick='password.type = this.checked?"text":"password"' />
+          <label for="viewPwd">Ver</label>
+        </form>
+      </fieldset>
+      <br />
+      <input type="button" value="Enviar Configurações" onclick="sendForm()" />
+      <input type="button" value="Recarregar a Página" onClick="location.href='index.html'" />
+    </section>
+    <div id="div_response"></div>
+    <script>
+      var g_config = {};
+
+      function scriptBegin() {
+        // Make two requests
+        const request_config = makeRequest("/config.json");
+        const request_scan = makeRequest("/scan.json");
+
+        // Wait for both requests to complete
+        Promise.all([request_scan, request_config])
+          .then((responses) => {
+            try {
+              const scan = JSON.parse(responses[0]).scan;
+              const config = JSON.parse(responses[1]);
+              build_interface(config, scan);
+            } catch (error) {
+              console.error("Error:", error);
+            }
+            document.getElementById("waitScanning").hidden = true;
+            document.getElementById("scanningResult").hidden = false;
+          })
+          .catch((error) => {
+            document.getElementById("waitScanning").hidden = true;
+            document.getElementById("scanningResult").hidden = false;
+            console.error("Error:", error);
+          });
+      }
+
+      function makeRequest(url) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", url);
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              resolve(xhr.response);
+            } else {
+              reject(new Error("Request failed: " + xhr.status));
+            }
+          };
+          xhr.onerror = () => {
+            reject(new Error("Request failed"));
+          };
+          xhr.timeout = 15000;
+          xhr.send();
+        });
+      }
+
+      function build_interface(config, scan) {
+        g_config = config;
+        try {
+          try {
+            document.getElementById("custom_radio_input").value = config.wifi.ssid;
+            document.getElementById("custom_ssid_input").value = config.wifi.ssid;
+          } catch (error) {}
+          try {
+            document.getElementById("password").value = config.wifi.psk;
+          } catch (error) {}
+          try {
+            let wifi_list = document.getElementById("ssidSelect");
+            scan.forEach((element) => {
+              try {
+                let wifi_input = document.createElement("input");
+                wifi_input.type = "radio";
+                wifi_input.id = "_wifi_" + element.ssid + "_" + element.bssid;
+                wifi_input.name = "ssid";
+                wifi_input.value = element.ssid;
+                let wifi_label = document.createElement("label");
+                wifi_label.setAttribute("for", wifi_input.id);
+                wifi_label.innerHTML = element.ssid + " (" + getRssiText(element.rssi) + ")" + "<br />";
+                wifi_list.insertBefore(wifi_input, custom_radio_input);
+                wifi_list.insertBefore(wifi_label, custom_radio_input);
+              } catch (error) {
+                console.error("Error:", error);
+              }
+            });
+            wifi_list.custom_ssid_input.focus();
+          } catch (error) {
+            console.error("Error:", error);
+          }
+        } catch (error) {
+          console.error("Error:", error);
+        }
+      }
+
+      function getRssiText(rssi_level) {
+        if (rssi_level > -50) {
+          return "ótimo";
+        } else if (rssi_level > -60) {
+          return "bom";
+        } else if (rssi_level > -70) {
+          return "regular";
+        } else if (rssi_level > -80) {
+          return "ruim";
+        }
+        return "péssimo";
+      }
+
+      function sendForm() {
+        let config = g_config;
+
+        try {
+          config.wifi.ssid = document.querySelector('form[id="ssidSelect"] input:checked').value;
+        } catch (error) {}
+        try {
+          config.wifi.psk = document.getElementById("password").value;
+        } catch (error) {}
+        try {
+          delete config.scan;
+        } catch (error) {}
+
+        var xhr = new XMLHttpRequest();
+        var response_status = document.getElementById("div_response");
+        xhr.onreadystatechange = function () {
+          if (this.readyState != 4) {
+            response_status.innerText = "Aguardando resposta... (" + this.readyState + ").";
+            return;
+          }
+          if (this.status == 200) {
+            response_status.innerText = "Salvo com sucesso.";
+          } else if (this.status == 0) {
+            response_status.innerText = "Não foi possível salvar a configuração";
+          } else {
+            response_status.innerText = "Erro: " + this.statusText;
+          }
+        };
+        response_status.innerText = "Enviando...";
+        xhr.open("POST", "/config.json", true);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.timeout = 5000;
+        xhr.send(JSON.stringify(config));
+      }
+    </script>
+  </body>
+</html>
